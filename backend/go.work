@@ -1,0 +1,17 @@
+go 1.24.0
+
+use (
+	./gateway
+	./pkg
+	./services/cart-service
+	./services/image-service
+	./services/inventory-service
+	./services/notification-service
+	./services/order-service
+	./services/payment-service
+	./services/product-service
+	./services/promotion-service
+	./services/shipping-service
+	./services/user-service
+	./services/worker-service
+)
