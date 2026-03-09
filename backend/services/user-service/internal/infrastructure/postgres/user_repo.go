@@ -25,6 +25,7 @@ SELECT
   access_token,
   password_changed_at,
   refresh_token,
+  token_version,
   created_by,
   updated_by,
   created_at,
@@ -54,6 +55,7 @@ type UserModel struct {
 	AccessToken       *string    `gorm:"column:access_token;type:text"`
 	PasswordChangedAt *time.Time `gorm:"column:password_changed_at"`
 	RefreshToken      *string    `gorm:"column:refresh_token;type:text"`
+	TokenVersion      *int       `gorm:"column:token_version"`
 	CreatedBy         *string    `gorm:"column:created_by;size:50"`
 	UpdatedBy         *string    `gorm:"column:updated_by;size:50"`
 	CreatedAt         *time.Time `gorm:"column:created_at"`
@@ -111,6 +113,7 @@ func (r *UserRepository) Create(ctx context.Context, u *domain.User) error {
 		m.AccessToken,
 		m.PasswordChangedAt,
 		m.RefreshToken,
+		m.TokenVersion,
 		m.CreatedBy,
 		m.UpdatedBy,
 		m.CreatedAt,
@@ -126,6 +129,7 @@ func (r *UserRepository) Update(ctx context.Context, u *domain.User) error {
 		m.FullName,
 		m.UserName,
 		m.AccessToken,
+		m.RefreshToken,
 		m.UpdatedAt,
 		m.ID,
 	).Error
@@ -147,6 +151,7 @@ func userToModel(u *domain.User) *UserModel {
 		AccessToken:       u.AccessToken,
 		PasswordChangedAt: u.PasswordChangedAt,
 		RefreshToken:      u.RefreshToken,
+		TokenVersion:      u.TokenVersion,
 		CreatedBy:         u.CreatedBy,
 		UpdatedBy:         u.UpdatedBy,
 		CreatedAt:         u.CreatedAt,
@@ -171,6 +176,7 @@ func modelToUser(m *UserModel) *domain.User {
 		AccessToken:       m.AccessToken,
 		PasswordChangedAt: m.PasswordChangedAt,
 		RefreshToken:      m.RefreshToken,
+		TokenVersion:      m.TokenVersion,
 		CreatedBy:         m.CreatedBy,
 		UpdatedBy:         m.UpdatedBy,
 		CreatedAt:         m.CreatedAt,

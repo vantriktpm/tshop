@@ -27,13 +27,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if err := postgres.EnsureSchema(dsn, db); err != nil {
+		log.Fatal(err)
+	}
 	repo := postgres.NewPaymentRepository(db)
 	h := rest.NewPaymentHandler(usecase.NewCreatePayment(repo))
 	r := gin.Default()
 	r.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
@@ -43,6 +43,6 @@ func main() {
 	r.POST("/api/payments/intent", h.CreateIntent)
 	// Health endpoint specific to payment-service
 	r.GET("/payments/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
-	log.Println("payment-service :8085")
-	_ = r.Run(":8085")
+	log.Println("payment-service :5006")
+	_ = r.Run(":5006")
 }

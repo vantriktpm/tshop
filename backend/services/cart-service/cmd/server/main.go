@@ -25,9 +25,6 @@ func main() {
 	h := rest.NewCartHandler(usecase.NewGetCart(repo))
 	r := gin.Default()
 	r.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
@@ -37,6 +34,6 @@ func main() {
 	r.GET("/api/cart", h.Get)
 	// Health endpoint specific to cart-service
 	r.GET("/cart/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
-	log.Println("cart-service :8084")
-	_ = r.Run(":8084")
+	log.Println("cart-service :5005")
+	_ = r.Run(":5005")
 }

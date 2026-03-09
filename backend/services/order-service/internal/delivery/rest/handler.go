@@ -1,9 +1,8 @@
 package rest
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
+	"github.com/tshop/backend/services/order-service/internal/domain"
 	"github.com/tshop/backend/services/order-service/internal/usecase"
 )
 
@@ -15,36 +14,20 @@ func NewOrderHandler(createOrder *usecase.CreateOrder) *OrderHandler {
 	return &OrderHandler{createOrder: createOrder}
 }
 
-type CreateOrderReq struct {
-	Items []struct {
-		ProductID string  `json:"product_id"`
-		Quantity  int64   `json:"quantity"`
-		Price     float64 `json:"price"`
-	} `json:"items"`
-}
-
 func (h *OrderHandler) Create(c *gin.Context) {
-	userID := c.GetString("user_id") // from JWT middleware
-	if userID == "" {
-		userID = "anonymous"
+	var body struct {
+		UserID      string           `json:"user_id"`
+		Items       []domain.OrderItem `json:"items"`
+		TotalAmount float64          `json:"total_amount"`
 	}
-	var req CreateOrderReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	input := usecase.CreateOrderInput{UserID: userID}
-	for _, it := range req.Items {
-		input.Items = append(input.Items, struct {
-			ProductID string
-			Quantity  int64
-			Price     float64
-		}{ProductID: it.ProductID, Quantity: it.Quantity, Price: it.Price})
-	}
-	order, err := h.createOrder.Execute(c.Request.Context(), input)
+	order, err := h.createOrder.Execute(c.Request.Context(), body.UserID, body.Items, body.TotalAmount)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, order)
+	c.JSON(201, order)
 }

@@ -2,24 +2,30 @@ package postgres
 
 import (
 	"context"
+
 	"github.com/tshop/backend/services/inventory-service/internal/domain"
 	"gorm.io/gorm"
 )
 
 type StockModel struct {
 	gorm.Model
-	ProductID string `gorm:"primaryKey"`
-	Quantity  int64
+	ProductID string `gorm:"primaryKey;column:product_id"`
+	Quantity  int64  `gorm:"column:quantity"`
 }
 
 func (StockModel) TableName() string { return "inventory" }
 
-type InventoryRepository struct{ db *gorm.DB }
+type InventoryRepository struct {
+	db *gorm.DB
+}
 
-func NewInventoryRepository(db *gorm.DB) *InventoryRepository { return &InventoryRepository{db: db} }
+func NewInventoryRepository(db *gorm.DB) *InventoryRepository {
+	return &InventoryRepository{db: db}
+}
 
 func (r *InventoryRepository) Reserve(ctx context.Context, productID string, qty int64) error {
-	return r.db.WithContext(ctx).Model(&StockModel{}).Where("product_id = ?", productID).
+	return r.db.WithContext(ctx).Model(&StockModel{}).
+		Where("product_id = ?", productID).
 		Update("quantity", gorm.Expr("quantity - ?", qty)).Error
 }
 

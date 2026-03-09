@@ -19,13 +19,14 @@ INSERT INTO service.users (
   access_token,
   password_changed_at,
   refresh_token,
+  token_version,
   created_by,
   updated_by,
   created_at,
   updated_at,
   expires_at
 ) VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 `
 
@@ -35,6 +36,7 @@ SET
   full_name = ?,
   user_name = ?,
   access_token = ?,
+  refresh_token = ?,
   updated_at = ?
 WHERE id = ?
 `

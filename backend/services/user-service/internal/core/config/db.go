@@ -3,28 +3,75 @@ package config
 import (
 	"bufio"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/tshop/backend/pkg/dbutil"
 	gormpostgres "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 // NewPostgresDB creates a *gorm.DB connection for user-service using config or env.
+// It ensures the target database and schema exist before returning the connection.
 func NewPostgresDB() (*gorm.DB, error) {
-	// Priority: user.config (DB_DSN=...) > env USER_SERVICE_DB_DSN > hard-coded default
-	if fileDSN, ok := loadFromUserConfig("DB_DSN"); ok && fileDSN != "" {
-		return openWithPGX(fileDSN)
+	dsn := resolveDSN()
+
+	// Ensure the database exists (creates it if missing).
+	if err := dbutil.EnsureDatabase(dsn, "user_db"); err != nil {
+		return nil, fmt.Errorf("ensure database: %w", err)
 	}
 
-	if dsn := os.Getenv("USER_SERVICE_DB_DSN"); dsn != "" {
-		return openWithPGX(dsn)
+	db, err := openWithPGX(dsn)
+	if err != nil {
+		return nil, err
 	}
 
-	dsn := "host=localhost user=postgres password=1 dbname=tshop port=5432 sslmode=disable"
-	return openWithPGX(dsn)
+	// Ensure the "service" schema exists (user-service uses service.users).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("get sql.DB: %w", err)
+	}
+	if err := dbutil.EnsureSchema(sqlDB, "service"); err != nil {
+		return nil, fmt.Errorf("ensure schema: %w", err)
+	}
+
+	// Ensure the users table exists inside the "service" schema.
+	if err := ensureUsersTable(sqlDB); err != nil {
+		return nil, fmt.Errorf("ensure users table: %w", err)
+	}
+
+	return db, nil
+}
+
+// ensureUsersTable creates service.users if it does not already exist.
+func ensureUsersTable(db *sql.DB) error {
+	_, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS service.users (
+    id                  UUID PRIMARY KEY,
+    user_name           VARCHAR(255),
+    full_name           VARCHAR(255),
+    phone               VARCHAR(255),
+    password_hash       TEXT,
+    salt                VARCHAR(255),
+    status              SMALLINT,
+    is_verified         BOOLEAN,
+    user_id             VARCHAR(255),
+    provider            VARCHAR(255),
+    provider_user_id    VARCHAR(255),
+    access_token        TEXT,
+    password_changed_at TIMESTAMPTZ,
+    refresh_token       TEXT,
+    token_version       INTEGER DEFAULT 1,
+    created_by          VARCHAR(50),
+    updated_by          VARCHAR(50),
+    created_at          TIMESTAMPTZ,
+    updated_at          TIMESTAMPTZ,
+    expires_at          TIMESTAMPTZ
+)`)
+	return err
 }
 
 // openWithPGX opens a *sql.DB using pgx stdlib and wraps it with GORM.
@@ -33,10 +80,22 @@ func openWithPGX(dsn string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Optional: tune pool here (SetMaxOpenConns, etc.) if needed.
 	return gorm.Open(gormpostgres.New(gormpostgres.Config{
 		Conn: sqlDB,
 	}), &gorm.Config{})
+}
+
+// resolveDSN resolves the DSN with the same priority chain as before.
+func resolveDSN() string {
+	// Priority: USER_SERVICE_CONFIG_PATH file > .env/user.config in CWD >
+	// known service paths > executable directory > USER_SERVICE_DB_DSN env > default.
+	if fileDSN, ok := loadFromUserConfig("DB_DSN"); ok && fileDSN != "" {
+		return fileDSN
+	}
+	if dsn := os.Getenv("USER_SERVICE_DB_DSN"); dsn != "" {
+		return dsn
+	}
+	return "host=localhost user=postgres password=1 dbname=user_db port=5432 sslmode=disable"
 }
 
 // loadFromUserConfig reads config (key=value per line) and returns value for the given key.

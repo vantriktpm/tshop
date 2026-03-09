@@ -3,6 +3,7 @@ go 1.24.0
 use (
 	./gateway
 	./pkg
+	./worker
 	./services/cart-service
 	./services/image-service
 	./services/inventory-service
@@ -13,5 +14,4 @@ use (
 	./services/promotion-service
 	./services/shipping-service
 	./services/user-service
-	./services/worker-service
 )

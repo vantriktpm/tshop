@@ -116,7 +116,15 @@ func (h *UserHandler) GoogleCallback(cfg config.GoogleOAuthConfig, repo domain.U
 		if user.UserName != nil {
 			email = *user.UserName
 		}
-		jwtToken, err := auth.NewToken(user.ID, email, cfg.JWTSecret, 24*time.Hour)
+		// Với GoogleCallback (flow redirect thẳng về frontend), vẫn tạo JWT ngắn hạn,
+		// gắn session_id mới để frontend có thể lưu nếu cần.
+		sessionID := uuid.New().String()
+		tokenVersion := 1
+		if user.TokenVersion != nil && *user.TokenVersion > 0 {
+			tokenVersion = *user.TokenVersion
+		}
+		accessTTL := 15 * time.Minute
+		jwtToken, err := auth.NewToken(user.ID, email, sessionID, tokenVersion, cfg.JWTSecret, accessTTL)
 		if err != nil {
 			c.Redirect(http.StatusFound, redirectWithError(cfg.FrontendRedirectURL, "token_failed"))
 			return
@@ -147,9 +155,10 @@ type GoogleVerifyRequest struct {
 	Credential string `json:"credential" binding:"required"`
 }
 
-// GoogleVerifyResponse trả về access_token cho frontend.
+// GoogleVerifyResponse trả về access_token và session_id cho frontend.
 type GoogleVerifyResponse struct {
 	AccessToken string `json:"access_token"`
+	SessionID   string `json:"session_id,omitempty"` // Phiên làm việc (Redis RDB+AOF)
 	User        struct {
 		ID       string `json:"id"`
 		Email    string `json:"email"`
@@ -203,14 +212,31 @@ func (h *UserHandler) GoogleVerify(cfg config.GoogleOAuthConfig, repo domain.Use
 		if user.UserName != nil {
 			email = *user.UserName
 		}
-		jwtToken, err := auth.NewToken(user.ID, email, cfg.JWTSecret, 24*time.Hour)
+		// Chuẩn bị session & token_version
+		sessionID := uuid.New().String()
+		tokenVersion := 1
+		if user.TokenVersion != nil && *user.TokenVersion > 0 {
+			tokenVersion = *user.TokenVersion
+		}
+
+		accessTTL := 15 * time.Minute
+		refreshTTL := 7 * 24 * time.Hour
+
+		jwtToken, err := auth.NewToken(user.ID, email, sessionID, tokenVersion, cfg.JWTSecret, accessTTL)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "token_failed"})
 			return
 		}
-		// Lưu JWT vào cột access_token trong bảng users
+		// Lưu JWT vào cột access_token trong bảng users và tạo refresh token
 		user.AccessToken = &jwtToken
+		refreshToken, err := generateRefreshToken()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "refresh_failed"})
+			return
+		}
+		user.RefreshToken = &refreshToken
 		now := time.Now()
+		user.ExpiresAt = ptrTime(now.Add(refreshTTL))
 		user.UpdatedAt = &now
 		if existing != nil && existing.ID != "" {
 			if err := repo.Update(ctx, user); err != nil {
@@ -231,12 +257,14 @@ func (h *UserHandler) GoogleVerify(cfg config.GoogleOAuthConfig, repo domain.Use
 				UserID:     user.ID,
 				PictureURL: userInfo.Picture,
 			}
-			if payload, err := json.Marshal(&evt); err == nil {
-				if err := h.eventPub.Publish(c.Request.Context(), events.TopicUserAvatarSync, user.ID, payload); err != nil {
-					log.Printf("avatar event publish: %v", err)
-				}
-			} else {
+			payload, err := json.Marshal(&evt)
+			if err != nil {
 				log.Printf("avatar event marshal: %v", err)
+			} else {
+				// Dùng background context để tránh bị hủy theo HTTP request
+				if err := h.eventPub.Publish(context.Background(), events.TopicUserAvatarSync, user.ID, payload); err != nil {
+					log.Printf("avatar event publish topic=%s user=%s: %v", events.TopicUserAvatarSync, user.ID, err)
+				}
 			}
 		}
 
@@ -244,14 +272,19 @@ func (h *UserHandler) GoogleVerify(cfg config.GoogleOAuthConfig, repo domain.Use
 		if user.FullName != nil {
 			fullName = *user.FullName
 		}
-		c.JSON(http.StatusOK, GoogleVerifyResponse{
+		resp := GoogleVerifyResponse{
 			AccessToken: jwtToken,
+			SessionID:   sessionID,
 			User: struct {
 				ID       string `json:"id"`
 				Email    string `json:"email"`
 				FullName string `json:"full_name"`
-			}{user.ID, email, fullName},
-		})
+			}{ID: user.ID, Email: email, FullName: fullName},
+		}
+		if h.sessionStore != nil {
+			_ = h.sessionStore.SetSession(ctx, sessionID, user.ID)
+		}
+		c.JSON(http.StatusOK, resp)
 	}
 }
 

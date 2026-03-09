@@ -1,0 +1,29 @@
+package postgres
+
+import (
+	"fmt"
+
+	"github.com/tshop/backend/pkg/dbutil"
+	"gorm.io/gorm"
+)
+
+// EnsureSchema creates the database (if missing) and auto-migrates all tables
+// for inventory-service. dsn must point to the inventory_db database.
+func EnsureSchema(dsn string, db *gorm.DB) error {
+	if err := dbutil.EnsureDatabase(dsn, "inventory_db"); err != nil {
+		return fmt.Errorf("inventory-service: ensure database: %w", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("inventory-service: get sql.DB: %w", err)
+	}
+	if err := dbutil.EnsureSchema(sqlDB, "public"); err != nil {
+		return fmt.Errorf("inventory-service: ensure schema: %w", err)
+	}
+
+	if err := db.AutoMigrate(&StockModel{}); err != nil {
+		return fmt.Errorf("inventory-service: auto-migrate: %w", err)
+	}
+	return nil
+}

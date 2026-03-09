@@ -35,6 +35,7 @@ type authUserResponse struct {
 type authTokensResponse struct {
 	AccessToken  string `json:"accessToken"`
 	RefreshToken string `json:"refreshToken,omitempty"`
+	SessionID    string `json:"sessionId,omitempty"` // Phiên làm việc, lưu Redis (RDB+AOF)
 	ExpiresIn    int64  `json:"expiresIn,omitempty"`
 }
 
@@ -67,16 +68,33 @@ func (h *UserHandler) LocalLogin(jwtSecret string, repo domain.UserRepository) g
 			return
 		}
 
-		// Tạo JWT
-		ttl := 24 * time.Hour
-		token, err := auth.NewToken(u.ID, req.Email, jwtSecret, ttl)
+		// Chuẩn bị session & token_version
+		sessionID := uuid.New().String()
+		tokenVersion := 1
+		if u.TokenVersion != nil && *u.TokenVersion > 0 {
+			tokenVersion = *u.TokenVersion
+		}
+
+		// Tạo access token ngắn hạn
+		accessTTL := 15 * time.Minute
+		token, err := auth.NewToken(u.ID, req.Email, sessionID, tokenVersion, jwtSecret, accessTTL)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "token_failed"})
 			return
 		}
 
+		// Tạo refresh token (7 ngày)
+		refreshTTL := 7 * 24 * time.Hour
+		refreshToken, err := generateRefreshToken()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "refresh_failed"})
+			return
+		}
+
 		now := time.Now()
 		u.AccessToken = &token
+		u.RefreshToken = &refreshToken
+		u.ExpiresAt = ptrTime(now.Add(refreshTTL))
 		u.UpdatedAt = &now
 		if err := repo.Update(ctx, u); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "update_failed"})
@@ -88,16 +106,19 @@ func (h *UserHandler) LocalLogin(jwtSecret string, repo domain.UserRepository) g
 			fullName = *u.FullName
 		}
 
+		tokens := authTokensResponse{
+			AccessToken:  token,
+			RefreshToken: refreshToken,
+			SessionID:    sessionID,
+			ExpiresIn:    int64(accessTTL.Seconds()),
+		}
+		if h.sessionStore != nil {
+			_ = h.sessionStore.SetSession(ctx, sessionID, u.ID)
+		}
+
 		c.JSON(http.StatusOK, authResponse{
-			User: authUserResponse{
-				ID:       u.ID,
-				Email:    req.Email,
-				FullName: fullName,
-			},
-			Tokens: authTokensResponse{
-				AccessToken: token,
-				ExpiresIn:   int64(ttl.Seconds()),
-			},
+			User:   authUserResponse{ID: u.ID, Email: req.Email, FullName: fullName},
+			Tokens: tokens,
 		})
 	}
 }
@@ -134,6 +155,12 @@ func (h *UserHandler) LocalRegister(jwtSecret string, repo domain.UserRepository
 		saltStr := salt
 		userName := req.Email
 		fullName := req.FullName
+		tokenVersion := 1
+
+		// Chuẩn bị session & refresh token cho user mới
+		sessionID := uuid.New().String()
+		accessTTL := 15 * time.Minute
+		refreshTTL := 7 * 24 * time.Hour
 
 		u := &domain.User{
 			ID:           uuid.New().String(),
@@ -146,30 +173,39 @@ func (h *UserHandler) LocalRegister(jwtSecret string, repo domain.UserRepository
 			UpdatedAt:    &now,
 		}
 
-		// Tạo JWT cho user mới
-		ttl := 24 * time.Hour
-		token, err := auth.NewToken(u.ID, req.Email, jwtSecret, ttl)
+		token, err := auth.NewToken(u.ID, req.Email, sessionID, tokenVersion, jwtSecret, accessTTL)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "token_failed"})
 			return
 		}
 		u.AccessToken = &token
 
+		refreshToken, err := generateRefreshToken()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "refresh_failed"})
+			return
+		}
+		u.RefreshToken = &refreshToken
+		u.ExpiresAt = ptrTime(now.Add(refreshTTL))
+
 		if err := repo.Create(ctx, u); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "create_failed"})
 			return
 		}
 
+		tokens := authTokensResponse{
+			AccessToken:  token,
+			RefreshToken: refreshToken,
+			SessionID:    sessionID,
+			ExpiresIn:    int64(accessTTL.Seconds()),
+		}
+		if h.sessionStore != nil {
+			_ = h.sessionStore.SetSession(ctx, sessionID, u.ID)
+		}
+
 		c.JSON(http.StatusOK, authResponse{
-			User: authUserResponse{
-				ID:       u.ID,
-				Email:    req.Email,
-				FullName: req.FullName,
-			},
-			Tokens: authTokensResponse{
-				AccessToken: token,
-				ExpiresIn:   int64(ttl.Seconds()),
-			},
+			User:   authUserResponse{ID: u.ID, Email: req.Email, FullName: req.FullName},
+			Tokens: tokens,
 		})
 	}
 }
@@ -190,4 +226,16 @@ func verifyPassword(storedHash, salt, password string) bool {
 	salt = strings.TrimSpace(salt)
 	h := sha256.Sum256([]byte(salt + password))
 	return storedHash == hex.EncodeToString(h[:])
+}
+
+func generateRefreshToken() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func ptrTime(t time.Time) *time.Time {
+	return &t
 }

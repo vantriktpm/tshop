@@ -3,59 +3,41 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/tshop/backend/pkg/events"
 	"github.com/tshop/backend/services/order-service/internal/domain"
 )
 
-type CreateOrderInput struct {
-	UserID string
-	Items  []struct {
-		ProductID string
-		Quantity  int64
-		Price     float64
-	}
-}
-
 type CreateOrder struct {
-	repo      domain.OrderRepository
-	publisher events.Publisher
+	repo domain.OrderRepository
+	pub  events.Publisher
 }
 
 func NewCreateOrder(repo domain.OrderRepository, pub events.Publisher) *CreateOrder {
-	return &CreateOrder{repo: repo, publisher: pub}
+	return &CreateOrder{repo: repo, pub: pub}
 }
 
-func (u *CreateOrder) Execute(ctx context.Context, input CreateOrderInput) (*domain.Order, error) {
-	var total float64
-	items := make([]domain.OrderItem, len(input.Items))
-	for i, it := range input.Items {
-		items[i] = domain.OrderItem{ProductID: it.ProductID, Quantity: it.Quantity, Price: it.Price}
-		total += it.Price * float64(it.Quantity)
-	}
+func (u *CreateOrder) Execute(ctx context.Context, userID string, items []domain.OrderItem, totalAmount float64) (*domain.Order, error) {
+	now := time.Now()
 	order := &domain.Order{
-		ID:          generateOrderID(),
-		UserID:       input.UserID,
-		Status:       domain.OrderStatusPending,
-		TotalAmount:  total,
-		Items:        items,
+		ID:          uuid.New().String(),
+		UserID:      userID,
+		Status:      domain.OrderStatusPending,
+		TotalAmount: totalAmount,
+		Items:       items,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := u.repo.Create(ctx, order); err != nil {
 		return nil, err
 	}
-	// Saga: publish OrderCreated for inventory, payment, notification
-	if u.publisher != nil {
-		evt := events.OrderCreatedEvent{OrderID: order.ID, UserID: order.UserID, TotalAmount: order.TotalAmount}
-		for _, it := range order.Items {
-			evt.Items = append(evt.Items, events.OrderItem{ProductID: it.ProductID, Quantity: it.Quantity})
-		}
-		payload, _ := json.Marshal(evt)
-		_ = u.publisher.Publish(ctx, events.TopicOrderCreated, order.ID, payload)
+	if u.pub != nil {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"order_id": order.ID, "user_id": userID, "total": totalAmount,
+		})
+		_ = u.pub.Publish(ctx, "order.created", order.ID, payload)
 	}
 	return order, nil
-}
-
-func generateOrderID() string {
-	// TODO: use UUID or ULID
-	return "ord-1"
 }

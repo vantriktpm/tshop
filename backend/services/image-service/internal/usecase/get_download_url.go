@@ -22,6 +22,7 @@ type GetDownloadURL struct {
 
 type DownloadURLProvider interface {
 	PresignedGetURL(ctx context.Context, bucket, objectKey string, expiry time.Duration) (string, error)
+	ObjectExists(ctx context.Context, bucket, objectKey string) (bool, error)
 }
 
 func NewGetDownloadURL(repo domain.ImageRepository, storage DownloadURLProvider, expiry time.Duration) *GetDownloadURL {
@@ -31,6 +32,7 @@ func NewGetDownloadURL(repo domain.ImageRepository, storage DownloadURLProvider,
 	return &GetDownloadURL{repo: repo, storage: storage, expiry: expiry}
 }
 
+// Execute: check MinIO trước (object có tồn tại), không có mới coi DB; nếu có trong MinIO trả presigned URL.
 func (u *GetDownloadURL) Execute(ctx context.Context, imageID string) (*GetDownloadURLResult, error) {
 	img, err := u.repo.GetByID(ctx, imageID)
 	if err != nil {
@@ -38,6 +40,13 @@ func (u *GetDownloadURL) Execute(ctx context.Context, imageID string) (*GetDownl
 	}
 	if img == nil {
 		return nil, fmt.Errorf("image not found: %s", imageID)
+	}
+	exists, err := u.storage.ObjectExists(ctx, img.BucketName, img.ObjectKey)
+	if err != nil {
+		return nil, fmt.Errorf("check minio: %w", err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("object not in minio: %s", imageID)
 	}
 	urlStr, err := u.storage.PresignedGetURL(ctx, img.BucketName, img.ObjectKey, u.expiry)
 	if err != nil {

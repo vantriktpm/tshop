@@ -1,7 +1,5 @@
 # Local dev: PostgreSQL, Redis, Kafka (Zookeeper)
-# Run: docker-compose up -d
-
-version: "3.8"
+# Run: docker compose up -d
 
 services:
   postgres:
@@ -14,6 +12,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -22,8 +21,12 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: redis-server /data/redis.conf
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/data/redis.conf
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -50,15 +53,222 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    depends_on:
-      - zookeeper
     ports:
       - "9092:9092"
+      - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui
+    ports:
+      - "5080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    environment:
+      PORT: 5000
+      CORS_ORIGIN: "*"
+      REDIS_ADDR: redis:6379
+    depends_on:
+      - user-service
+      - order-service
+      - product-service
+      - cart-service
+      - inventory-service
+      - payment-service
+      - shipping-service
+      - promotion-service
+      - notification-service
+      - image-service
+    ports:
+      - "5000:5000"
+
+  user-service:
+    build:
+      context: .
+      dockerfile: ./services/user-service/Dockerfile
+    env_file:
+      - ./services/user-service/cmd/.env
+    environment:
+      USER_SERVICE_DB_DSN: host=postgres user=postgres password=postgres dbname=user_db port=5432 sslmode=disable
+      USER_SERVICE_CONFIG_PATH: /dev/null
+      USER_SERVICE_PORT: "5001"
+      KAFKA_BROKER: kafka:29092
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    ports:
+      - "5001:5001"
+
+  order-service:
+    build:
+      context: .
+      dockerfile: ./services/order-service/Dockerfile
+    env_file:
+      - ./services/order-service/cmd/.env
+    environment:
+      DB_DSN: host=postgres user=postgres password=postgres dbname=order_db port=5432 sslmode=disable
+      KAFKA_BROKER: kafka:29092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    ports:
+      - "5002:5002"
+
+  product-service:
+    build:
+      context: .
+      dockerfile: ./services/product-service/Dockerfile
+    env_file:
+      - ./services/product-service/cmd/.env
+    environment:
+      DB_DSN: host=postgres user=postgres password=postgres dbname=product_db port=5432 sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5003:5003"
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: ./services/inventory-service/Dockerfile
+    env_file:
+      - ./services/inventory-service/cmd/.env
+    environment:
+      DB_DSN: host=postgres user=postgres password=postgres dbname=inventory_db port=5432 sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5004:5004"
+
+  cart-service:
+    build:
+      context: .
+      dockerfile: ./services/cart-service/Dockerfile
+    env_file:
+      - ./services/cart-service/cmd/.env
+    environment:
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5005:5005"
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: ./services/payment-service/Dockerfile
+    env_file:
+      - ./services/payment-service/cmd/.env
+    environment:
+      DB_DSN: host=postgres user=postgres password=postgres dbname=payment_db port=5432 sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5006:5006"
+
+  shipping-service:
+    build:
+      context: .
+      dockerfile: ./services/shipping-service/Dockerfile
+    env_file:
+      - ./services/shipping-service/cmd/.env
+    environment:
+      DB_DSN: host=postgres user=postgres password=postgres dbname=shipping_db port=5432 sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5007:5007"
+
+  promotion-service:
+    build:
+      context: .
+      dockerfile: ./services/promotion-service/Dockerfile
+    env_file:
+      - ./services/promotion-service/cmd/.env
+    environment:
+      DB_DSN: host=postgres user=postgres password=postgres dbname=promotion_db port=5432 sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5008:5008"
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: ./services/notification-service/Dockerfile
+    env_file:
+      - ./services/notification-service/cmd/.env
+    environment:
+      DB_DSN: host=postgres user=postgres password=postgres dbname=notification_db port=5432 sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5009:5009"
+
+  image-service:
+    build:
+      context: .
+      dockerfile: ./services/image-service/Dockerfile
+    env_file:
+      - ./services/image-service/cmd/.env
+    environment:
+      DB_DSN: host=postgres user=postgres password=postgres dbname=image_db port=5432 sslmode=disable
+      KAFKA_BROKER: kafka:29092
+      REDIS_ADDR: redis:6379
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_USE_SSL: "false"
+      MINIO_PRESIGN_MINUTES: "15"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      kafka:
+        condition: service_started
+    ports:
+      - "5010:5010"
+
+  worker-sync-avatar:
+    build:
+      context: .
+      dockerfile: ./worker/Dockerfile
+    environment:
+      KAFKA_BROKER: kafka:29092
+      IMAGE_SERVICE_URL: http://image-service:5010
+    depends_on:
+      - kafka
+      - image-service
 
 volumes:
   postgres_data:
+  redis_data:

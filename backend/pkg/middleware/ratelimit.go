@@ -11,7 +11,7 @@ import (
 type RateLimiter struct {
 	mu       sync.Mutex
 	visitors map[string]*visitor
-	rate     int           // requests per window
+	rate     int // requests per window
 	window   time.Duration
 }
 

@@ -9,7 +9,8 @@
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/gateway"
+      "program": "${workspaceFolder}/backend/gateway",
+      "cwd": "${workspaceFolder}/backend/gateway"
     },
     {
       "name": "Debug user-service",
@@ -17,69 +18,87 @@
       "request": "launch",
       "mode": "auto",
       "program": "${workspaceFolder}/backend/services/user-service/cmd/server",
+      "cwd": "${workspaceFolder}/backend/services/user-service"
     },
     {
       "name": "Debug order-service",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/services/order-service/cmd/server"
+      "program": "${workspaceFolder}/backend/services/order-service/cmd/server",
+      "cwd": "${workspaceFolder}/backend/services/order-service"
     },
     {
       "name": "Debug product-service",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/services/product-service/cmd/server"
+      "program": "${workspaceFolder}/backend/services/product-service/cmd/server",
+      "cwd": "${workspaceFolder}/backend/services/product-service"
     },
     {
       "name": "Debug cart-service",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/services/cart-service/cmd/server"
+      "program": "${workspaceFolder}/backend/services/cart-service/cmd/server",
+      "cwd": "${workspaceFolder}/backend/services/cart-service"
     },
     {
       "name": "Debug inventory-service",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/services/inventory-service/cmd/server"
+      "program": "${workspaceFolder}/backend/services/inventory-service/cmd/server",
+      "cwd": "${workspaceFolder}/backend/services/inventory-service"
     },
     {
       "name": "Debug payment-service",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/services/payment-service/cmd/server"
+      "program": "${workspaceFolder}/backend/services/payment-service/cmd/server",
+      "cwd": "${workspaceFolder}/backend/services/payment-service"
     },
     {
       "name": "Debug shipping-service",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/services/shipping-service/cmd/server"
+      "program": "${workspaceFolder}/backend/services/shipping-service/cmd/server",
+      "cwd": "${workspaceFolder}/backend/services/shipping-service"
     },
     {
       "name": "Debug promotion-service",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/services/promotion-service/cmd/server"
+      "program": "${workspaceFolder}/backend/services/promotion-service/cmd/server",
+      "cwd": "${workspaceFolder}/backend/services/promotion-service"
     },
     {
       "name": "Debug notification-service",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/services/notification-service/cmd/server"
+      "program": "${workspaceFolder}/backend/services/notification-service/cmd/server",
+      "cwd": "${workspaceFolder}/backend/services/notification-service"
     },
     {
       "name": "Debug image-service",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/services/image-service/cmd/server"
+      "program": "${workspaceFolder}/backend/services/image-service/cmd/server",
+      "cwd": "${workspaceFolder}/backend/services/image-service"
+    },
+    {
+      "name": "Debug worker-sync-avatar",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/backend/worker/cmd/worker-sync-avatar/main.go",
+      "cwd": "${workspaceFolder}/backend/worker"
     }
   ],
   "compounds": [
@@ -96,7 +115,8 @@
         "Debug shipping-service",
         "Debug promotion-service",
         "Debug notification-service",
-        "Debug image-service"
+        "Debug image-service",
+        "Debug worker-sync-avatar"
       ]
     }
   ]

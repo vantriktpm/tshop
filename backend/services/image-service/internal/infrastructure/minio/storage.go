@@ -79,3 +79,12 @@ func (s *Storage) PutObject(ctx context.Context, bucket, objectKey, contentType 
 	_, err := s.client.PutObject(ctx, bucket, objectKey, body, size, opts)
 	return err
 }
+
+// ObjectExists returns true if object exists in MinIO (check MinIO trước, không có mới coi DB).
+func (s *Storage) ObjectExists(ctx context.Context, bucket, objectKey string) (bool, error) {
+	_, err := s.client.StatObject(ctx, bucket, objectKey, minio.StatObjectOptions{})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}

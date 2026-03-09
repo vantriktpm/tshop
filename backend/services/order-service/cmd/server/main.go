@@ -28,12 +28,14 @@ func main() {
 	}
 	sqlDB, err := sql.Open("pgx", dsn)
 	if err != nil {
-		log.Printf("postgres: %v (run migrations or use sqlite for dev)", err)
+		log.Fatalf("postgres: %v", err)
 	}
 	db, err := gorm.Open(gormpostgres.New(gormpostgres.Config{Conn: sqlDB}), &gorm.Config{})
 	if err != nil {
-		log.Printf("postgres: %v (run migrations or use sqlite for dev)", err)
-		// Optional: use in-memory for local dev
+		log.Fatalf("postgres: %v", err)
+	}
+	if err := postgres.EnsureSchema(dsn, db); err != nil {
+		log.Fatalf("postgres: %v", err)
 	}
 
 	// Kafka (event-driven: publish OrderCreated for inventory, payment, notification)
@@ -59,9 +61,6 @@ func main() {
 	// Delivery: REST (Gin) - external API
 	r := gin.Default()
 	r.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
@@ -86,8 +85,8 @@ func main() {
 		_ = grpcServer.Serve(lis)
 	}()
 
-	log.Println("order-service REST :8081")
-	if err := r.Run(":8081"); err != nil {
+	log.Println("order-service REST :5002")
+	if err := r.Run(":5002"); err != nil {
 		log.Fatal("gin:", err)
 	}
 }

@@ -10,10 +10,10 @@ import (
 
 type ImageModel struct {
 	ID         string     `gorm:"column:id;primaryKey;type:uuid"`
-	OwnerID    *string    `gorm:"column:owner_id;type:uuid"`         // product_id hoặc user_id
-	OwnerType  *string    `gorm:"column:owner_type;size:50"`         // product, user, banner...
+	OwnerID    *string    `gorm:"column:owner_id;type:uuid"` // product_id hoặc user_id
+	OwnerType  *string    `gorm:"column:owner_type;size:50"` // product, user, banner...
 	FileName   *string    `gorm:"column:file_name;size:255"`
-	ObjectKey  string     `gorm:"column:object_key;size:500"`        // path trong minio
+	ObjectKey  string     `gorm:"column:object_key;size:500"` // path trong minio
 	BucketName string     `gorm:"column:bucket_name;size:100"`
 	MimeType   *string    `gorm:"column:mime_type;size:100"`
 	Size       *int64     `gorm:"column:size"`
@@ -63,14 +63,14 @@ func imageToModel(img *domain.Image) *ImageModel {
 
 func modelToImage(m *ImageModel) *domain.Image {
 	return &domain.Image{
-		ID:         m.ID,
-		ObjectKey:  m.ObjectKey,
-		BucketName: m.BucketName,
+		ID:          m.ID,
+		ObjectKey:   m.ObjectKey,
+		BucketName:  m.BucketName,
 		ContentType: m.MimeType,
-		Size:       m.Size,
-		CreatedBy:  m.CreatedBy,
-		UpdatedBy:  m.UpdatedBy,
-		CreatedAt:  m.CreatedAt,
-		UpdatedAt:  m.UpdatedAt,
+		Size:        m.Size,
+		CreatedBy:   m.CreatedBy,
+		UpdatedBy:   m.UpdatedBy,
+		CreatedAt:   m.CreatedAt,
+		UpdatedAt:   m.UpdatedAt,
 	}
 }

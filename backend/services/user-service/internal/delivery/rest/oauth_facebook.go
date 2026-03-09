@@ -111,7 +111,15 @@ func (h *UserHandler) FacebookCallback(cfg config.FacebookOAuthConfig, repo doma
 		if user.UserName != nil {
 			email = *user.UserName
 		}
-		jwtToken, err := auth.NewToken(user.ID, email, cfg.JWTSecret, 24*time.Hour)
+		// Chuẩn bị session & token_version
+		sessionID := uuid.New().String()
+		tokenVersion := 1
+		if user.TokenVersion != nil && *user.TokenVersion > 0 {
+			tokenVersion = *user.TokenVersion
+		}
+
+		accessTTL := 15 * time.Minute
+		jwtToken, err := auth.NewToken(user.ID, email, sessionID, tokenVersion, cfg.JWTSecret, accessTTL)
 		if err != nil {
 			c.Redirect(http.StatusFound, redirectWithError(cfg.FrontendRedirectURL, "token_failed"))
 			return

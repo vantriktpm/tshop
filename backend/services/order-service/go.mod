@@ -5,6 +5,8 @@ go 1.23
 require (
 	github.com/IBM/sarama v1.42.2
 	github.com/gin-gonic/gin v1.9.1
+	github.com/google/uuid v1.6.0
+	github.com/jackc/pgx/v5 v5.4.3
 	github.com/tshop/backend/pkg v0.0.0
 	google.golang.org/grpc v1.60.1
 	gorm.io/driver/postgres v1.5.4
@@ -32,7 +34,6 @@ require (
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
-	github.com/jackc/pgx/v5 v5.4.3 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/gofork v1.7.6 // indirect

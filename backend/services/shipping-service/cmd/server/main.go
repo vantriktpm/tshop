@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/tshop/backend/services/shipping-service/internal/delivery/rest"
+	"github.com/tshop/backend/services/shipping-service/internal/infrastructure/postgres"
 	gormpostgres "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -25,13 +26,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	_ = db
-	h := rest.NewShippingHandler()
+	if err := postgres.EnsureSchema(dsn, db); err != nil {
+		log.Fatal(err)
+	}
+	repo := postgres.NewShippingRepository(db)
+	h := rest.NewShippingHandler(repo)
 	r := gin.Default()
 	r.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
@@ -41,6 +42,6 @@ func main() {
 	r.POST("/api/shipping", h.Create)
 	// Health endpoint specific to shipping-service
 	r.GET("/shipping/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
-	log.Println("shipping-service :8086")
-	_ = r.Run(":8086")
+	log.Println("shipping-service :5007")
+	_ = r.Run(":5007")
 }

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useProductStore, useAuthStore } from '@/stores'
-import { httpClient } from '@/core/http/httpClient'
 import { setLocale, type Locale } from '@/i18n'
 import type { Product } from '@/modules/product/domain'
+import { useAvatarSocket } from '@/core/websocket/useAvatarSocket'
 
 const { t, locale } = useI18n()
 const productStore = useProductStore()
@@ -18,35 +18,16 @@ function switchLocale(newLocale: Locale) {
   setLocale(newLocale)
 }
 const quantity = ref<Record<string, number>>({})
-const avatarUrl = ref<string | null>(null)
+
+// WebSocket: khi backend push avatar.saved (user_id, image_id) → gọi GET image theo image_id và hiển thị
+const { avatarDownloadUrl, clearAvatar } = useAvatarSocket(computed(() => authStore.user?.id))
+const avatarUrl = computed(() => avatarDownloadUrl.value)
 
 const userDisplayName = computed(
   () => authStore.user?.fullName ?? authStore.user?.email ?? ''
 )
 const userInitial = computed(() =>
   userDisplayName.value ? userDisplayName.value.charAt(0).toUpperCase() : '?'
-)
-
-// Load avatar URL từ image-service dựa trên user.id (qua API Gateway)
-watch(
-  () => authStore.user?.id,
-  async (userId) => {
-    if (!userId) {
-      avatarUrl.value = null
-      return
-    }
-    try {
-      // image-service: GET /api/images/:id/download-url (qua gateway /api/images/...)
-      const res = await httpClient.get<{ download_url: string }>(
-        `/images/${userId}/download-url`
-      )
-      const data = res as unknown as { download_url: string }
-      avatarUrl.value = data.download_url
-    } catch {
-      avatarUrl.value = null
-    }
-  },
-  { immediate: true }
 )
 
 onMounted(() => {
@@ -104,7 +85,7 @@ function formatPrice(value: number): string {
                 :src="avatarUrl"
                 :alt="userDisplayName || 'avatar'"
                 class="h-full w-full object-cover"
-                @error="avatarUrl = null"
+                @error="clearAvatar()"
               />
               <div
                 v-else

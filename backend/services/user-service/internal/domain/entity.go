@@ -17,6 +17,7 @@ type User struct {
 	AccessToken       *string    // text
 	PasswordChangedAt *time.Time // timestamp with time zone
 	RefreshToken      *string    // text
+	TokenVersion      *int       // integer, used to revoke all tokens
 	CreatedBy         *string    // character(50)
 	UpdatedBy         *string    // character(50)
 	CreatedAt         *time.Time // timestamp with time zone

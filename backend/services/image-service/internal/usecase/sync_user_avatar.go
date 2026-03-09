@@ -29,29 +29,30 @@ func NewSyncUserAvatar(repo domain.ImageRepository, storage ObjectUploader) *Syn
 }
 
 // Execute downloads pictureURL and saves it as user avatar for userID.
-func (u *SyncUserAvatar) Execute(ctx context.Context, userID, pictureURL string) error {
+// Returns the created image ID for pushing via WebSocket (avatar.saved).
+func (u *SyncUserAvatar) Execute(ctx context.Context, userID, pictureURL string) (imageID string, err error) {
 	if userID == "" || pictureURL == "" {
-		return nil
+		return "", nil
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pictureURL, nil)
 	if err != nil {
-		return fmt.Errorf("avatar: new request: %w", err)
+		return "", fmt.Errorf("avatar: new request: %w", err)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("avatar: download: %w", err)
+		return "", fmt.Errorf("avatar: download: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("avatar: status %d", resp.StatusCode)
+		return "", fmt.Errorf("avatar: status %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("avatar: read body: %w", err)
+		return "", fmt.Errorf("avatar: read body: %w", err)
 	}
 	if len(body) == 0 {
-		return fmt.Errorf("avatar: empty body for user %s", userID)
+		return "", fmt.Errorf("avatar: empty body for user %s", userID)
 	}
 	contentType := resp.Header.Get("Content-Type")
 	size := int64(len(body))
@@ -60,25 +61,25 @@ func (u *SyncUserAvatar) Execute(ctx context.Context, userID, pictureURL string)
 	objectKey := "user-avatars/" + userID
 
 	if err := u.storage.EnsureBucket(ctx, bucket); err != nil {
-		return fmt.Errorf("avatar: ensure bucket: %w", err)
+		return "", fmt.Errorf("avatar: ensure bucket: %w", err)
 	}
 	if err := u.storage.PutObject(ctx, bucket, objectKey, contentType, bytes.NewReader(body), size); err != nil {
-		return fmt.Errorf("avatar: put object: %w", err)
+		return "", fmt.Errorf("avatar: put object: %w", err)
 	}
 
 	now := time.Now()
+	imgID := uuid.NewString()
 	img := &domain.Image{
-		ID:         uuid.NewString(),
-		ObjectKey:  objectKey,
-		BucketName: bucket,
+		ID:          imgID,
+		ObjectKey:   objectKey,
+		BucketName:  bucket,
 		ContentType: &contentType,
-		Size:       &size,
-		CreatedBy:  &userID,
-		CreatedAt:  &now,
+		Size:        &size,
+		CreatedBy:   &userID,
+		CreatedAt:   &now,
 	}
 	if err := u.repo.Create(ctx, img); err != nil {
-		return fmt.Errorf("avatar: create image: %w", err)
+		return "", fmt.Errorf("avatar: create image: %w", err)
 	}
-	return nil
+	return imgID, nil
 }
-
