@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tshop/backend/pkg/auth"
+	"github.com/tshop/backend/pkg/logger"
 	"github.com/tshop/backend/services/user-service/internal/domain"
 )
 
@@ -50,6 +51,12 @@ func (h *UserHandler) LocalLogin(jwtSecret string, repo domain.UserRepository) g
 	return func(c *gin.Context) {
 		var req loginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
+			logger.Error("auth_local_login_bad_request", map[string]interface{}{
+				"service": "user-service",
+				"action":  "login",
+				"email":   req.Email,
+				"error":   err.Error(),
+			})
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
 			return
 		}
@@ -59,11 +66,22 @@ func (h *UserHandler) LocalLogin(jwtSecret string, repo domain.UserRepository) g
 
 		u, _ := repo.GetByUserName(ctx, req.Email)
 		if u == nil || u.ID == "" || u.PasswordHash == nil || u.Salt == nil {
+			logger.Info("auth_local_login_invalid_user", map[string]interface{}{
+				"service": "user-service",
+				"action":  "login",
+				"email":   req.Email,
+			})
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials"})
 			return
 		}
 
 		if !verifyPassword(*u.PasswordHash, *u.Salt, req.Password) {
+			logger.Info("auth_local_login_invalid_password", map[string]interface{}{
+				"service": "user-service",
+				"action":  "login",
+				"user_id": u.ID,
+				"email":   req.Email,
+			})
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials"})
 			return
 		}
@@ -79,6 +97,13 @@ func (h *UserHandler) LocalLogin(jwtSecret string, repo domain.UserRepository) g
 		accessTTL := 15 * time.Minute
 		token, err := auth.NewToken(u.ID, req.Email, sessionID, tokenVersion, jwtSecret, accessTTL)
 		if err != nil {
+			logger.Error("auth_local_login_token_failed", map[string]interface{}{
+				"service": "user-service",
+				"action":  "login",
+				"user_id": u.ID,
+				"email":   req.Email,
+				"error":   err.Error(),
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "token_failed"})
 			return
 		}
@@ -87,6 +112,13 @@ func (h *UserHandler) LocalLogin(jwtSecret string, repo domain.UserRepository) g
 		refreshTTL := 7 * 24 * time.Hour
 		refreshToken, err := generateRefreshToken()
 		if err != nil {
+			logger.Error("auth_local_login_refresh_failed", map[string]interface{}{
+				"service": "user-service",
+				"action":  "login",
+				"user_id": u.ID,
+				"email":   req.Email,
+				"error":   err.Error(),
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "refresh_failed"})
 			return
 		}
@@ -97,6 +129,13 @@ func (h *UserHandler) LocalLogin(jwtSecret string, repo domain.UserRepository) g
 		u.ExpiresAt = ptrTime(now.Add(refreshTTL))
 		u.UpdatedAt = &now
 		if err := repo.Update(ctx, u); err != nil {
+			logger.Error("auth_local_login_update_failed", map[string]interface{}{
+				"service": "user-service",
+				"action":  "login",
+				"user_id": u.ID,
+				"email":   req.Email,
+				"error":   err.Error(),
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "update_failed"})
 			return
 		}
@@ -113,8 +152,24 @@ func (h *UserHandler) LocalLogin(jwtSecret string, repo domain.UserRepository) g
 			ExpiresIn:    int64(accessTTL.Seconds()),
 		}
 		if h.sessionStore != nil {
-			_ = h.sessionStore.SetSession(ctx, sessionID, u.ID)
+			if err := h.sessionStore.SetSession(ctx, sessionID, u.ID); err != nil {
+				logger.Error("auth_local_login_session_set_failed", map[string]interface{}{
+					"service":    "user-service",
+					"action":     "login",
+					"user_id":    u.ID,
+					"session_id": sessionID,
+					"error":      err.Error(),
+				})
+			}
 		}
+
+		logger.Info("auth_local_login_success", map[string]interface{}{
+			"service":    "user-service",
+			"action":     "login",
+			"user_id":    u.ID,
+			"email":      req.Email,
+			"session_id": sessionID,
+		})
 
 		c.JSON(http.StatusOK, authResponse{
 			User:   authUserResponse{ID: u.ID, Email: req.Email, FullName: fullName},
@@ -129,6 +184,12 @@ func (h *UserHandler) LocalRegister(jwtSecret string, repo domain.UserRepository
 	return func(c *gin.Context) {
 		var req registerRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
+			logger.Error("auth_local_register_bad_request", map[string]interface{}{
+				"service": "user-service",
+				"action":  "register",
+				"email":   req.Email,
+				"error":   err.Error(),
+			})
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request"})
 			return
 		}
@@ -139,12 +200,23 @@ func (h *UserHandler) LocalRegister(jwtSecret string, repo domain.UserRepository
 		// Kiểm tra đã tồn tại email chưa
 		existing, _ := repo.GetByUserName(ctx, req.Email)
 		if existing != nil && existing.ID != "" {
+			logger.Info("auth_local_register_email_exists", map[string]interface{}{
+				"service": "user-service",
+				"action":  "register",
+				"email":   req.Email,
+			})
 			c.JSON(http.StatusBadRequest, gin.H{"error": "email_exists"})
 			return
 		}
 
 		hash, salt, err := hashPassword(req.Password)
 		if err != nil {
+			logger.Error("auth_local_register_hash_failed", map[string]interface{}{
+				"service": "user-service",
+				"action":  "register",
+				"email":   req.Email,
+				"error":   err.Error(),
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "hash_failed"})
 			return
 		}
@@ -175,6 +247,13 @@ func (h *UserHandler) LocalRegister(jwtSecret string, repo domain.UserRepository
 
 		token, err := auth.NewToken(u.ID, req.Email, sessionID, tokenVersion, jwtSecret, accessTTL)
 		if err != nil {
+			logger.Error("auth_local_register_token_failed", map[string]interface{}{
+				"service": "user-service",
+				"action":  "register",
+				"user_id": u.ID,
+				"email":   req.Email,
+				"error":   err.Error(),
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "token_failed"})
 			return
 		}
@@ -182,6 +261,13 @@ func (h *UserHandler) LocalRegister(jwtSecret string, repo domain.UserRepository
 
 		refreshToken, err := generateRefreshToken()
 		if err != nil {
+			logger.Error("auth_local_register_refresh_failed", map[string]interface{}{
+				"service": "user-service",
+				"action":  "register",
+				"user_id": u.ID,
+				"email":   req.Email,
+				"error":   err.Error(),
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "refresh_failed"})
 			return
 		}
@@ -189,6 +275,13 @@ func (h *UserHandler) LocalRegister(jwtSecret string, repo domain.UserRepository
 		u.ExpiresAt = ptrTime(now.Add(refreshTTL))
 
 		if err := repo.Create(ctx, u); err != nil {
+			logger.Error("auth_local_register_create_failed", map[string]interface{}{
+				"service": "user-service",
+				"action":  "register",
+				"user_id": u.ID,
+				"email":   req.Email,
+				"error":   err.Error(),
+			})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "create_failed"})
 			return
 		}
@@ -200,8 +293,24 @@ func (h *UserHandler) LocalRegister(jwtSecret string, repo domain.UserRepository
 			ExpiresIn:    int64(accessTTL.Seconds()),
 		}
 		if h.sessionStore != nil {
-			_ = h.sessionStore.SetSession(ctx, sessionID, u.ID)
+			if err := h.sessionStore.SetSession(ctx, sessionID, u.ID); err != nil {
+				logger.Error("auth_local_register_session_set_failed", map[string]interface{}{
+					"service":    "user-service",
+					"action":     "register",
+					"user_id":    u.ID,
+					"session_id": sessionID,
+					"error":      err.Error(),
+				})
+			}
 		}
+
+		logger.Info("auth_local_register_success", map[string]interface{}{
+			"service":    "user-service",
+			"action":     "register",
+			"user_id":    u.ID,
+			"email":      req.Email,
+			"session_id": sessionID,
+		})
 
 		c.JSON(http.StatusOK, authResponse{
 			User:   authUserResponse{ID: u.ID, Email: req.Email, FullName: req.FullName},

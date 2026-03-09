@@ -22,6 +22,7 @@ import (
 
 	"github.com/IBM/sarama"
 	"github.com/tshop/backend/pkg/events"
+	"github.com/tshop/backend/pkg/logger"
 )
 
 func main() {
@@ -58,6 +59,10 @@ func main() {
 	}
 	client, err := sarama.NewConsumerGroup(brokers, groupID, cfg)
 	if err != nil {
+		logger.Error("worker_sync_avatar_new_consumer_group_failed", map[string]interface{}{
+			"service": "worker-sync-avatar",
+			"error":   err.Error(),
+		})
 		log.Fatalf("worker-sync-avatar: NewConsumerGroup: %v", err)
 	}
 	defer client.Close()
@@ -69,8 +74,13 @@ func main() {
 	if cfg.Consumer.Offsets.Initial == sarama.OffsetNewest {
 		offsetReset = "newest"
 	}
-	log.Printf("worker-sync-avatar: subscribing to %v (brokers=%v, group=%s, offset=%s)",
-		topics, brokers, groupID, offsetReset)
+	logger.Info("worker_sync_avatar_subscribe", map[string]interface{}{
+		"service": "worker-sync-avatar",
+		"topics":  topics,
+		"brokers": brokers,
+		"group":   groupID,
+		"offset":  offsetReset,
+	})
 
 	var backoff time.Duration
 	for {
@@ -82,7 +92,10 @@ func main() {
 			backoff = 0
 			continue
 		}
-		log.Printf("worker-sync-avatar: Consume: %v", err)
+		logger.Error("worker_sync_avatar_consume_failed", map[string]interface{}{
+			"service": "worker-sync-avatar",
+			"error":   err.Error(),
+		})
 		// Lỗi "Offset's topic has not yet been created": Kafka __consumer_offsets chưa sẵn sàng → retry với backoff
 		if strings.Contains(err.Error(), "not yet been created") {
 			if backoff == 0 {
@@ -91,7 +104,10 @@ func main() {
 			if backoff < 30*time.Second {
 				backoff *= 2
 			}
-			log.Printf("worker-sync-avatar: retry in %v", backoff)
+			logger.Info("worker_sync_avatar_retry", map[string]interface{}{
+				"service": "worker-sync-avatar",
+				"backoff": backoff.String(),
+			})
 			time.Sleep(backoff)
 			continue
 		}
@@ -102,7 +118,10 @@ func main() {
 func ensureTopic(brokers []string, cfg *sarama.Config, topic string) {
 	admin, err := sarama.NewClusterAdmin(brokers, cfg)
 	if err != nil {
-		log.Printf("worker-sync-avatar: ClusterAdmin (create topic): %v", err)
+		logger.Error("worker_sync_avatar_cluster_admin_failed", map[string]interface{}{
+			"service": "worker-sync-avatar",
+			"error":   err.Error(),
+		})
 		return
 	}
 	defer admin.Close()
@@ -111,10 +130,17 @@ func ensureTopic(brokers []string, cfg *sarama.Config, topic string) {
 		ReplicationFactor: 1,
 	}, false)
 	if err != nil && !errors.Is(err, sarama.ErrTopicAlreadyExists) {
-		log.Printf("worker-sync-avatar: CreateTopic %q: %v", topic, err)
+		logger.Error("worker_sync_avatar_create_topic_failed", map[string]interface{}{
+			"service": "worker-sync-avatar",
+			"topic":   topic,
+			"error":   err.Error(),
+		})
 		return
 	}
-	log.Printf("worker-sync-avatar: topic %q ready", topic)
+	logger.Info("worker_sync_avatar_topic_ready", map[string]interface{}{
+		"service": "worker-sync-avatar",
+		"topic":   topic,
+	})
 }
 
 type avatarSyncHandler struct {
@@ -122,14 +148,21 @@ type avatarSyncHandler struct {
 }
 
 func (h *avatarSyncHandler) Setup(session sarama.ConsumerGroupSession) error {
-	log.Printf("worker-sync-avatar: Setup claims=%v", session.Claims())
+	logger.Info("worker_sync_avatar_setup", map[string]interface{}{
+		"service": "worker-sync-avatar",
+		"claims":  session.Claims(),
+	})
 	return nil
 }
 
 func (h *avatarSyncHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
 
 func (h *avatarSyncHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-	log.Printf("worker-sync-avatar: ConsumeClaim topic=%s partition=%d", claim.Topic(), claim.Partition())
+	logger.Info("worker_sync_avatar_consume_claim", map[string]interface{}{
+		"service":   "worker-sync-avatar",
+		"topic":     claim.Topic(),
+		"partition": claim.Partition(),
+	})
 	for msg := range claim.Messages() {
 		if msg.Topic == events.TopicUserAvatarSync {
 			h.handleUserAvatarSync(msg.Value)
@@ -142,11 +175,18 @@ func (h *avatarSyncHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cl
 func (h *avatarSyncHandler) handleUserAvatarSync(payload []byte) {
 	var evt events.UserAvatarSyncEvent
 	if err := json.Unmarshal(payload, &evt); err != nil {
-		log.Printf("worker-sync-avatar: user.avatar.sync unmarshal: %v", err)
+		logger.Error("worker_sync_avatar_unmarshal_failed", map[string]interface{}{
+			"service": "worker-sync-avatar",
+			"error":   err.Error(),
+		})
 		return
 	}
 	if evt.UserID == "" || evt.PictureURL == "" {
-		log.Printf("worker-sync-avatar: user.avatar.sync skip empty user_id=%q picture_url=%q", evt.UserID, evt.PictureURL)
+		logger.Info("worker_sync_avatar_skip_empty_payload", map[string]interface{}{
+			"service":     "worker-sync-avatar",
+			"user_id":     evt.UserID,
+			"picture_url": evt.PictureURL,
+		})
 		return
 	}
 	body, _ := json.Marshal(map[string]string{
@@ -157,19 +197,35 @@ func (h *avatarSyncHandler) handleUserAvatarSync(payload []byte) {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.imageServiceURL+"/api/images/sync-avatar", bytes.NewReader(body))
 	if err != nil {
-		log.Printf("worker-sync-avatar: sync-avatar new request: %v", err)
+		logger.Error("worker_sync_avatar_new_request_failed", map[string]interface{}{
+			"service": "worker-sync-avatar",
+			"url":     h.imageServiceURL + "/api/images/sync-avatar",
+			"error":   err.Error(),
+		})
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("worker-sync-avatar: sync-avatar call: %v", err)
+		logger.Error("worker_sync_avatar_call_failed", map[string]interface{}{
+			"service": "worker-sync-avatar",
+			"url":     h.imageServiceURL + "/api/images/sync-avatar",
+			"error":   err.Error(),
+		})
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("worker-sync-avatar: sync-avatar status %d for user=%s", resp.StatusCode, evt.UserID)
+		logger.Error("worker_sync_avatar_call_bad_status", map[string]interface{}{
+			"service":    "worker-sync-avatar",
+			"status":     resp.StatusCode,
+			"user_id":    evt.UserID,
+			"image_url":  h.imageServiceURL + "/api/images/sync-avatar",
+		})
 		return
 	}
-	log.Printf("worker-sync-avatar: user.avatar.sync done user=%s", evt.UserID)
+	logger.Info("worker_sync_avatar_done", map[string]interface{}{
+		"service": "worker-sync-avatar",
+		"user_id": evt.UserID,
+	})
 }

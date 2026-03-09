@@ -3,10 +3,10 @@ package kafka
 import (
 	"context"
 	"encoding/json"
-	"log"
 
 	"github.com/IBM/sarama"
 	"github.com/tshop/backend/pkg/events"
+	"github.com/tshop/backend/pkg/logger"
 	"github.com/tshop/backend/services/image-service/internal/usecase"
 )
 
@@ -31,21 +31,42 @@ func (h *AvatarConsumer) ConsumeClaim(session sarama.ConsumerGroupSession, claim
 
 		var evt events.UserAvatarSyncEvent
 		if err := json.Unmarshal(msg.Value, &evt); err != nil {
-			log.Printf("avatar-consumer: unmarshal: %v", err)
+			logger.Error("avatar_consumer_unmarshal_failed", map[string]interface{}{
+				"service": "image-service",
+				"topic":   msg.Topic,
+				"error":   err.Error(),
+			})
 			session.MarkMessage(msg, "")
 			continue
 		}
 		if evt.UserID == "" || evt.PictureURL == "" {
-			log.Printf("avatar-consumer: skip empty payload user_id=%q picture_url=%q", evt.UserID, evt.PictureURL)
+			logger.Info("avatar_consumer_skip_empty_payload", map[string]interface{}{
+				"service":     "image-service",
+				"topic":       msg.Topic,
+				"user_id":     evt.UserID,
+				"picture_url": evt.PictureURL,
+			})
 			session.MarkMessage(msg, "")
 			continue
 		}
 
 		if imageID, err := h.sync.Execute(context.Background(), evt.UserID, evt.PictureURL); err != nil {
-			log.Printf("avatar-consumer: sync user=%s: %v", evt.UserID, err)
+			logger.Error("avatar_consumer_sync_failed", map[string]interface{}{
+				"service":     "image-service",
+				"topic":       msg.Topic,
+				"user_id":     evt.UserID,
+				"picture_url": evt.PictureURL,
+				"error":       err.Error(),
+			})
 		} else if imageID != "" {
 			// Notify via Redis so gateway/WS can push to frontend (handled in handler if AvatarNotifier set)
-			_ = imageID
+			logger.Info("avatar_consumer_sync_success", map[string]interface{}{
+				"service":     "image-service",
+				"topic":       msg.Topic,
+				"user_id":     evt.UserID,
+				"picture_url": evt.PictureURL,
+				"image_id":    imageID,
+			})
 		}
 		session.MarkMessage(msg, "")
 	}
